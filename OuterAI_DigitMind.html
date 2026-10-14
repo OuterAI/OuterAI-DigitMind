@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090d18">
+<title>OuterAI DigitMind</title>
+<style>
+:root{color-scheme:dark;--bg:#090d18;--panel:#121a2a;--line:#283650;--text:#f2f5ff;--muted:#9ba9c2;--purple:#9a83ff;--mint:#36e0bd}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -10%,#20264b 0%,var(--bg) 55%);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+main{max-width:940px;padding:22px 16px 42px;margin:auto}header{display:flex;align-items:center;gap:12px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#9a83ff,#36e0bd);color:#09101c;display:grid;place-items:center;font-weight:950;font-size:25px;box-shadow:0 8px 28px #9a83ff28}h1{font-size:24px;letter-spacing:-.7px;margin:0}header p{font-size:13px;color:var(--muted);margin:2px 0 0}.tag{margin-left:auto;border:1px solid var(--line);padding:6px 10px;border-radius:99px;color:#c3cde0;font-size:11px;white-space:nowrap}
+.layout{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}.card{background:linear-gradient(160deg,#151e30,#101725);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:0 15px 40px #0002}.heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:13px}.heading h2{font-size:16px;margin:0}.muted{color:var(--muted);font-size:12px}
+.canvas-wrap{border:1px solid #35425d;background:#050912;border-radius:14px;padding:8px;overflow:hidden;touch-action:none}canvas{display:block;width:100%;aspect-ratio:1;background:#050912;border-radius:8px;touch-action:none;cursor:crosshair}
+.controls{display:flex;gap:8px;margin-top:12px}.btn{border:1px solid #36435e;background:#202b41;color:var(--text);border-radius:12px;padding:11px 14px;font-weight:700;cursor:pointer;font-size:13px;min-height:42px}.btn:active{transform:scale(.98)}.btn.primary{background:linear-gradient(135deg,#8b70ff,#6650df);border:0;flex:1}.btn:disabled{opacity:.55;cursor:wait}
+.tip{font-size:12px;color:var(--muted);margin:11px 2px 0}.prediction{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #2b3852;background:#0c1321;border-radius:14px;margin-bottom:17px}.pred-digit{font-size:48px;font-weight:900;line-height:1;color:var(--purple);min-width:56px;text-align:center}.pred-copy{min-width:0}.pred-copy strong{display:block;font-size:14px}.pred-copy span{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.bars{display:flex;flex-direction:column;gap:10px}.bar-row{display:grid;grid-template-columns:18px minmax(0,1fr) 46px;gap:9px;align-items:center}.bar-label{font-weight:750;font-variant-numeric:tabular-nums}.track{height:11px;background:#27334a;border-radius:99px;overflow:hidden}.fill{height:100%;width:0;background:linear-gradient(90deg,#8068ff,#ad9dff);border-radius:99px;transition:width .22s ease}.bar-row.top .fill{background:linear-gradient(90deg,#29cfae,#79f3d9)}.pct{text-align:right;font-size:12px;color:#c3cde0;font-variant-numeric:tabular-nums}
+.status{font-size:12px;min-height:19px;margin-top:12px;color:var(--mint)}.info{margin-top:14px;background:#0c1422;border:1px solid #26344d;border-radius:12px;padding:12px;color:#aebbd2;font-size:12px;line-height:1.55}.info strong{color:#e6ebff}.foot{text-align:center;color:#687793;font-size:11px;margin-top:22px}
+@media(max-width:700px){.layout{grid-template-columns:1fr}main{padding-top:16px}.card{padding:16px}.tag{font-size:10px}h1{font-size:21px}}
+</style>
+</head>
+<body><main>
+<header><div class="logo">O</div><div><h1>OuterAI DigitMind</h1><p>Draw a digit. See what the neural network sees.</p></div><div class="tag">MNIST · AI LAB</div></header>
+<div class="layout">
+<section class="card">
+<div class="heading"><h2>Draw a digit</h2><span class="muted">Freehand canvas</span></div>
+<div class="canvas-wrap"><canvas id="draw" width="280" height="280" aria-label="Draw a handwritten digit here"></canvas></div>
+<div class="controls"><button class="btn primary" id="predict">✦ Recognize digit</button><button class="btn" id="clear">Clear</button></div>
+<p class="tip">Use your finger or mouse. Draw one large, centered digit for the best results.</p>
+<div class="status" id="status" role="status">Loading the AI model…</div>
+</section>
+<section class="card">
+<div class="heading"><h2>Digit probabilities</h2><span class="muted">0–9</span></div>
+<div class="prediction"><div class="pred-digit" id="winner">—</div><div class="pred-copy"><strong id="winnerTitle">Waiting for a drawing</strong><span id="winnerSub">Your prediction will appear here.</span></div></div>
+<div class="bars" id="bars"></div>
+<div class="info"><strong>How to read this:</strong> each bar shows the model's output score for that digit. These scores are model estimates, not a guarantee that the answer is correct.</div>
+</section>
+</div>
+<div class="foot">OUTERAI · BUILT TO EXPLORE INTELLIGENCE</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script>
+/* Pretrained MNIST-style TensorFlow.js LayersModel (28x28 grayscale input, 10 digit outputs). */
+const MODEL_URL='https://raw.githubusercontent.com/cupcakearmy/mnist/master/static/model.json';
+const canvas=document.getElementById('draw'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+const predictBtn=document.getElementById('predict'),statusEl=document.getElementById('status');
+let model=null,drawing=false,hasInk=false,lastPoint=null;
+ctx.fillStyle='#000';ctx.fillRect(0,0,280,280);ctx.strokeStyle='#fff';ctx.lineWidth=19;ctx.lineCap='round';ctx.lineJoin='round';
+const barsEl=document.getElementById('bars');
+for(let d=0;d<10;d++){const row=document.createElement('div');row.className='bar-row';row.innerHTML=`<span class="bar-label">${d}</span><div class="track"><div class="fill" id="fill${d}"></div></div><span class="pct" id="pct${d}">—</span>`;barsEl.appendChild(row)}
+function setStatus(s,err=false){statusEl.textContent=s;statusEl.style.color=err?'#ff8fa3':'var(--mint)'}
+function pos(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+canvas.addEventListener('pointerdown',e=>{drawing=true;hasInk=true;canvas.setPointerCapture(e.pointerId);lastPoint=pos(e);ctx.beginPath();ctx.moveTo(lastPoint.x,lastPoint.y);ctx.lineTo(lastPoint.x+.1,lastPoint.y+.1);ctx.stroke();e.preventDefault()});
+canvas.addEventListener('pointermove',e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lastPoint.x,lastPoint.y);ctx.lineTo(p.x,p.y);ctx.stroke();lastPoint=p;e.preventDefault()});
+function endDraw(){drawing=false;lastPoint=null}canvas.addEventListener('pointerup',endDraw);canvas.addEventListener('pointercancel',endDraw);
+function clearCanvas(){ctx.fillStyle='#000';ctx.fillRect(0,0,280,280);hasInk=false;document.getElementById('winner').textContent='—';document.getElementById('winnerTitle').textContent='Waiting for a drawing';document.getElementById('winnerSub').textContent='Your prediction will appear here.';for(let d=0;d<10;d++){document.getElementById('fill'+d).style.width='0%';document.getElementById('pct'+d).textContent='—';barsEl.children[d].classList.remove('top')}}
+document.getElementById('clear').addEventListener('click',clearCanvas);
+function preprocess(){
+ // MNIST expects 28x28 grayscale. Scale the drawn canvas into a centered 20x20 box.
+ const src=ctx.getImageData(0,0,280,280),gray=new Float32Array(280*280);
+ let minX=280,minY=280,maxX=-1,maxY=-1;
+ for(let y=0;y<280;y++)for(let x=0;x<280;x++){const i=(y*280+x)*4;const v=src.data[i];gray[y*280+x]=v;if(v>20){if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y}}
+ if(maxX<0)return null;
+ const w=maxX-minX+1,h=maxY-minY+1,scale=20/Math.max(w,h),dw=Math.max(1,Math.round(w*scale)),dh=Math.max(1,Math.round(h*scale));
+ const temp=document.createElement('canvas');temp.width=28;temp.height=28;const t=temp.getContext('2d',{willReadFrequently:true});
+ t.fillStyle='#000';t.fillRect(0,0,28,28);
+ const crop=document.createElement('canvas');crop.width=w;crop.height=h;const cc=crop.getContext('2d');
+ const im=cc.createImageData(w,h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const v=gray[(minY+y)*280+minX+x],i=(y*w+x)*4;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}cc.putImageData(im,0,0);
+ t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';t.drawImage(crop,0,0,w,h,Math.round((28-dw)/2),Math.round((28-dh)/2),dw,dh);
+ const data=t.getImageData(0,0,28,28).data,arr=new Float32Array(784);for(let i=0;i<784;i++)arr[i]=data[i*4]/255;
+ return tf.tensor4d(arr,[1,28,28,1]);
+}
+async function loadModel(){
+ if(!window.tf){setStatus('TensorFlow.js could not load. Check your internet connection.',true);return}
+ try{await tf.ready();setStatus('Loading pretrained digit model…');model=await tf.loadLayersModel(MODEL_URL);setStatus('AI model ready. Draw a digit and tap Recognize digit.');predictBtn.disabled=false}
+ catch(e){model=null;setStatus('Could not load the pretrained model. Check your internet connection and reload the page.',true);predictBtn.disabled=false}
+}
+predictBtn.addEventListener('click',async()=>{
+ if(!hasInk){setStatus('Draw a digit first.',true);return}
+ if(!model){setStatus('The pretrained model is not available yet. Check your internet connection and reload.',true);return}
+ predictBtn.disabled=true;setStatus('Analyzing your drawing…');
+ try{
+   const input=preprocess();if(!input){setStatus('Draw a digit first.',true);return}
+   const output=model.predict(input);const vals=await output.data();input.dispose();output.dispose();
+   let scores=Array.from(vals).slice(0,10);let sum=scores.reduce((a,b)=>a+Math.max(0,b),0);
+   if(scores.some(x=>x<0)||sum<0.00001){const max=Math.max(...scores);const ex=scores.map(x=>Math.exp(x-max));sum=ex.reduce((a,b)=>a+b,0);scores=ex.map(x=>x/sum)}else scores=scores.map(x=>Math.max(0,x)/sum);
+   const winner=scores.indexOf(Math.max(...scores));document.getElementById('winner').textContent=winner;document.getElementById('winnerTitle').textContent='Model’s top prediction: '+winner;document.getElementById('winnerSub').textContent=(scores[winner]*100).toFixed(1)+'% model score';
+   scores.forEach((s,d)=>{document.getElementById('fill'+d).style.width=(s*100)+'%';document.getElementById('pct'+d).textContent=(s*100).toFixed(1)+'%';barsEl.children[d].classList.toggle('top',d===winner)});
+   setStatus('Prediction complete.');
+ }catch(e){setStatus('Prediction failed. Please reload the app and try again.',true)}finally{predictBtn.disabled=false}
+});
+predictBtn.disabled=true;loadModel();
+</script></body></html>
